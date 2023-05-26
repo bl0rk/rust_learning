@@ -1,10 +1,12 @@
 #![allow(dead_code)]
 
+// TODO: 
+// - Rework merge sort and maybe make it less bad. 
+
 pub fn insertion_sort_vec<T>(mut to_order: Vec<T>) -> Vec<T> where T: PartialOrd { 
     // Loop through every elements (starting at index 1) and then go back every element with a for loop in every iteration and compare the elements with 
     // the one before it. 
     for mut cur_i in 1..to_order.len() { 
-        // I do not know if having this variable is better or if just doing cur_i - 1 in the three required space would be better. 
         let mut las_i = cur_i - 1; 
         loop { 
             if to_order[las_i] > to_order[cur_i] { 

@@ -6,7 +6,7 @@ use std::path::Path;
 pub fn change_filetype_run() { 
     let mut args = env::args(); //Get args. 
     args.next(); // Skip unneeded argument. 
-    let args: Vec<String> = args.collect(); // Easier to work with a vector. 
+    let args: Vec<String> = args.collect(); 
 
     match args.get(0) { 
         Some(arg) => { 
@@ -39,7 +39,6 @@ fn change_files(config: &mut CFTConfig) {
     if !path.is_dir() { 
         return; 
     } 
-
     
     for entry in fs::read_dir(path).unwrap() { 
         let entry = entry.unwrap(); 
