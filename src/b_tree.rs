@@ -1,5 +1,8 @@
 use std::ptr; 
 
+// TODO: 
+// - Add deletion. 
+
 pub struct BTree<T> { 
     root: *mut BTreeNode<T>, 
     order: usize 
@@ -64,8 +67,6 @@ impl<T> BTree<T> where T: PartialOrd + std::fmt::Debug {
 
         unsafe { 
             to_append.push_str(&format!("root; keys: {:?}", (*self.root).keys)); 
-            // println!("root; keys: {:?}", (*self.root).keys); 
-            // println!("root; children: {:?}", (*self.root).children.len()); 
 
             for child in (*self.root).children.iter() { 
                 (**child)._traverse(&mut to_append, layer); 
@@ -90,7 +91,6 @@ impl<T> BTreeNode<T> where T: PartialOrd + std::fmt::Debug {
         layer += 1; 
 
         to_append.push_str(&format!("\nkeys {:?}; layer {}", self.keys, layer)); 
-        // println!("keys {:?}; layer {}", self.keys, layer); 
 
         if self.leaf { 
             return; 
@@ -169,10 +169,8 @@ impl<T> BTreeNode<T> where T: PartialOrd + std::fmt::Debug {
 
         // The key that will be moved up. 
         let middle_key = (*child).keys.remove(middle); 
-
-        // Insert into the right places. Well i hope they're the right places at least. 
+        
         self.keys.insert(index, middle_key); 
-        // self.children.insert(index, child); 
         self.children.insert(index+1, Box::into_raw(Box::new(right_child))); 
     } 
 } 
