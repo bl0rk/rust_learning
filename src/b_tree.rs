@@ -1,12 +1,15 @@
 use std::ptr; 
+use std::marker::PhantomData; 
 
 // TODO: 
 // - Add deletion. 
-// - Make it usable. (Having everything just be T probably isn't very useful, especially for removing and getting anything that's more complicated than a number.) 
+// - Make it usable. (Having everything just be T probably isn't very useful, especially for removing and getting anything that's more complicated than a number. 
+//   Seriously, right now gettign something would require you to input the thing you want to get, how does that make sense.) 
 
 pub struct BTree<T> { 
     root: *mut BTreeNode<T>, 
-    order: usize 
+    order: usize, 
+    _boo: PhantomData<T> // No idea if this is needed tbh. 
 } 
 
 struct BTreeNode<T> { 
@@ -27,7 +30,7 @@ impl<T> BTree<T> where T: PartialOrd + std::fmt::Debug {
             panic!("BTree order must be equal to or greater than 2."); 
         } 
 
-        Self { root: ptr::null_mut(), order } 
+        Self { root: ptr::null_mut(), order, _boo: PhantomData } 
     } 
 
     pub fn insert(&mut self, key: T) { 
@@ -203,14 +206,10 @@ impl<T> Drop for BTree<T> {
 
 impl<T> Drop for BTreeNode<T> { 
     fn drop(&mut self) { 
-        for i in 0..self.children.len() { 
-            // Safety check, as far as i know (which isn't a lot to be fair) there shouldn't be any null pointer in the children vector but better to be safe. 
-            if self.children[i].is_null() { 
-                continue; 
-            } 
-
+        // Could do a self.children.map() and while let thingy but idk if that'd make sense. 
+        for child in self.children.iter() { 
             unsafe { 
-                let node = Box::from_raw(self.children[i]); 
+                let node = Box::from_raw(*child); 
                 // Since i don't know a lot about recursive things, i'm just gonna hope this can't blow the stack. 
                 drop(node); 
             } 
