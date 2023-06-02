@@ -2,6 +2,7 @@ use std::ptr;
 
 // TODO: 
 // - Add deletion. 
+// - Make it usable. (Having everything just be T probably isn't very useful, especially for removing and getting anything that's more complicated than a number.) 
 
 pub struct BTree<T> { 
     root: *mut BTreeNode<T>, 
@@ -54,6 +55,18 @@ impl<T> BTree<T> where T: PartialOrd + std::fmt::Debug {
 
             (*self.root).insert_non_full(key); 
         } 
+    } 
+
+    pub fn remove(&mut self, _key: T) -> Option<T> { 
+        todo!(); 
+    } 
+
+    pub fn get_ref(&self, _key: T) -> Option<&T> { 
+        todo!(); 
+    } 
+
+    pub fn get_mut(&mut self, _key: T) -> Option<&mut T> { 
+        todo!(); 
     } 
 
     pub fn traverse(&self) -> String { 
