@@ -4,7 +4,7 @@ use std::env;
 use std::path::Path; 
 
 // Note: This is one of the most earliest projects here and i'm aware that this isn't actually any real filetype changing and converting 
-// and only renaming files. But the goal of this was mostly to change .webp files to .png of .jpg so i wouldn't have to deal with a browser 
+// and only renaming files. But the goal of this was mostly to change .webp files to .png or .jpg so i wouldn't have to deal with a browser 
 // opening when just wanting to look at a image. 
 
 pub fn change_filetype_run() { 

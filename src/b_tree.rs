@@ -1,15 +1,24 @@
+#![allow(unused_variables)] 
+
 use std::ptr; 
 use std::marker::PhantomData; 
 
 // TODO: 
 // - Add deletion. 
-// - Make it usable. (Having everything just be T probably isn't very useful, especially for removing and getting anything that's more complicated than a number. 
-//   Seriously, right now gettign something would require you to input the thing you want to get, how does that make sense.) 
+// - Make a BTreeMap version of this. Currently it behaves like a BTreeSet. 
+// - Make design decision: Should the Vectors in the BTreeNodes have their max space pre-allocated to save allocation costs on insertion or not (as is right now) 
+//   to save space. 
+// - Remove hacks for get_ref(). 
+
+// Notes: 
+// - get_mut() would be impossible at it's current state i think, since the value could be changed and thus mess up the ordering. Since this particular implementation 
+//   (at the moment) would behave almost identical to a BTreeSet to a outside observer, get_mut() will not be implemented in this data structure. It will be implemented 
+//   in a BTreeMap version of this datastructure and will then only be able to change the values, not the keys. 
 
 pub struct BTree<T> { 
     root: *mut BTreeNode<T>, 
     order: usize, 
-    _boo: PhantomData<T> // No idea if this is needed tbh. 
+   _boo: PhantomData<T>  // No idea if this is needed tbh. But it shouldn't matter (i think) since this should only be for the compiler. 
 } 
 
 struct BTreeNode<T> { 
@@ -60,16 +69,43 @@ impl<T> BTree<T> where T: PartialOrd + std::fmt::Debug {
         } 
     } 
 
-    pub fn remove(&mut self, _key: T) -> Option<T> { 
+    pub fn remove(&mut self, key: T) -> Option<T> { 
+        if self.root.is_null() { 
+            return None; 
+        } 
+
         todo!(); 
     } 
 
-    pub fn get_ref(&self, _key: T) -> Option<&T> { 
-        todo!(); 
-    } 
+    pub fn get_ref(&self, key: T) -> Option<&T> { 
+        if self.root.is_null() { 
+            return None; 
+        } 
 
-    pub fn get_mut(&mut self, _key: T) -> Option<&mut T> { 
-        todo!(); 
+        let mut current_node = unsafe { &(*self.root) }; 
+
+        loop { 
+            let mut next = current_node.children.len(); 
+
+            for (i, k) in current_node.keys.iter().enumerate() { 
+                if *k == key { 
+                    return Some(k); 
+                } 
+
+                if *k > key { 
+                    next = i+1; 
+                } 
+            } 
+
+            if current_node.leaf { 
+                break; 
+            } 
+
+            // Note: next-1 as well as next = i+1 are both hacks to get around overflow. 
+            current_node = unsafe { &(*current_node.children[next-1]) } 
+        } 
+
+        None 
     } 
 
     pub fn traverse(&self) -> String { 
@@ -147,7 +183,7 @@ impl<T> BTreeNode<T> where T: PartialOrd + std::fmt::Debug {
                 self.split_child(insert_i); 
 
                 if self.keys[insert_i] < insert_key { 
-                    insert_i += 1 ;
+                    insert_i += 1; 
                 } 
             } 
 
@@ -168,7 +204,7 @@ impl<T> BTreeNode<T> where T: PartialOrd + std::fmt::Debug {
         let middle = ck_len / 2; 
 
         // Need the last keys after the middle for the right child. 
-        let drain_iter = (*child).keys.drain(middle+1..ck_len); 
+        let drain_iter = (*child).keys.drain(middle+1..ck_len); // Check if there is a better and more efficent way to do this. 
 
         for key in drain_iter { 
             right_child.keys.push(key); 
@@ -189,6 +225,10 @@ impl<T> BTreeNode<T> where T: PartialOrd + std::fmt::Debug {
         self.keys.insert(index, middle_key); 
         self.children.insert(index+1, Box::into_raw(Box::new(right_child))); 
     } 
+
+    unsafe fn delete(&mut self, key: T) -> Option<T> { 
+        todo!(); 
+    } 
 } 
 
 impl<T> Drop for BTree<T> { 
@@ -197,10 +237,8 @@ impl<T> Drop for BTree<T> {
             return; 
         } 
 
-        unsafe { 
-            let _root = Box::from_raw(self.root); 
-            drop(_root); 
-        } 
+        let _root = unsafe { Box::from_raw(self.root) }; 
+        drop(_root); 
     } 
 } 
 
@@ -208,11 +246,9 @@ impl<T> Drop for BTreeNode<T> {
     fn drop(&mut self) { 
         // Could do a self.children.map() and while let thingy but idk if that'd make sense. 
         for child in self.children.iter() { 
-            unsafe { 
-                let node = Box::from_raw(*child); 
-                // Since i don't know a lot about recursive things, i'm just gonna hope this can't blow the stack. 
-                drop(node); 
-            } 
+            let node = unsafe { Box::from_raw(*child) }; 
+            // Since i don't know a lot about recursive things, i'm just gonna hope this can't blow the stack. 
+            drop(node); 
         } 
     } 
 } 
