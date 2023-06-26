@@ -3,6 +3,8 @@
 use std::ptr; 
 use std::marker::PhantomData; 
 
+// This is a very naive implementation of a BTree. 
+
 // TODO: 
 // - Make a BTreeMap version of this. Currently it behaves like a BTreeSet. 
 // - Make design decision: Should the Vectors in the BTreeNodes have their max space pre-allocated to save allocation costs on insertion or not (as is right now) 
@@ -16,36 +18,9 @@ use std::marker::PhantomData;
 //   in a BTreeMap version of this datastructure and will then only be able to change the values, not the keys. 
 // - Insertion implementation may be weird. If during insertion a node is made full by the insertion operation, this overflow will not be corrected until the next 
 //   insertion that comes across the full node. 
-
-// For debugging. Will be removed later. 
-struct TraverseResult<T> { 
-    levels: Vec<Vec<Vec<T>>> 
-} 
-
-impl<T> TraverseResult<T> where T: std::fmt::Debug { 
-    pub fn new() -> Self { 
-        Self { levels: vec![] } 
-    } 
-
-    pub fn insert(&mut self, level: usize, values: Vec<T>) { 
-        if level > self.levels.len() { 
-            return; 
-        } 
-
-        if level == self.levels.len() { 
-            self.levels.push(vec![values]); 
-            return; 
-        } 
-
-        self.levels[level].push(values); 
-    } 
-
-    pub fn print_all(&self) { 
-        for (i, level) in self.levels.iter().enumerate() { 
-            println!("{i}: {:?}", level); 
-        } 
-    } 
-} 
+// - There was a bug in remove() where a child was double dropped if the whole tree was dropped after the root was empty at the end of the remove algorithm, but while 
+//   trying to drop that node again didn't work as it shouldn't exist anymore, it was somehow still possible to access the dropped child node. How this works i have no idea, to 
+//   replicate this simply change the line `self.root = root.children.remove(0); ` to `self.root = root.children[0]; `in BTree::remove(). 
 
 pub struct BTree<T> { 
     root: *mut BTreeNode<T>, 
@@ -60,7 +35,7 @@ struct BTreeNode<T> {
     leaf: bool 
 } 
 
-impl<T> BTree<T> where T: PartialOrd + std::fmt::Debug + Clone { 
+impl<T> BTree<T> where T: PartialOrd { 
     /// Creates a new empty BTree. `order` must be greater or equal to 2. 
     /// # Example 
     /// ```
@@ -119,7 +94,8 @@ impl<T> BTree<T> where T: PartialOrd + std::fmt::Debug + Clone {
                 self.root = ptr::null_mut(); 
             } else { 
                 // Only the root is empty. 
-                self.root = root.children[0]; 
+                // BUG FIXED: child was not removed and so was double dropped. 
+                self.root = root.children.remove(0); 
             } 
 
             drop(unsafe { Box::from_raw(old_root) }); 
@@ -162,58 +138,15 @@ impl<T> BTree<T> where T: PartialOrd + std::fmt::Debug + Clone {
 
         None 
     } 
-
-    pub fn debug_traverse(&self) { 
-        // Mostly used for debugging. 
-        if self.root.is_null() { 
-            println!("The BTree is empty."); 
-        } 
-
-        let layer: usize = 0; 
-        let mut traverse: TraverseResult<T> = TraverseResult::new(); 
-
-        unsafe { 
-            // for key in &(*self.root).keys { 
-            //     traverse.insert(layer, key.clone()); 
-            // } 
-            traverse.insert(layer, (*self.root).keys.clone()); 
-
-            for child in (*self.root).children.iter() { 
-                (**child)._traverse(&mut traverse, layer); 
-            } 
-        } 
-
-        traverse.print_all(); 
-    } 
 } 
 
-impl<T> BTreeNode<T> where T: PartialOrd + std::fmt::Debug + Clone { 
+impl<T> BTreeNode<T> where T: PartialOrd { 
     pub fn new(order: usize, leaf: bool) -> Self { 
         Self { 
             order, 
             keys: Vec::new(), // Maybe change keys and children to be at the max size immeaditly? Would save allocation costs but waste memory. 
             children: Vec::new(), 
             leaf 
-        } 
-    } 
-
-    fn _traverse(&self, traverse: &mut TraverseResult<T>, mut layer: usize) { 
-        layer += 1; 
-
-        // for key in &self.keys { 
-        //     traverse.insert(layer, key.clone()); 
-        // } 
-
-        traverse.insert(layer, self.keys.clone()); 
-
-        if self.leaf { 
-            return; 
-        } 
-
-        for child in self.children.iter() { 
-            unsafe { 
-                (**child)._traverse(traverse, layer); 
-            } 
         } 
     } 
 
@@ -436,6 +369,79 @@ impl<T> Drop for BTreeNode<T> {
             let node = unsafe { Box::from_raw(*child) }; 
             // Since i don't know a lot about recursive things, i'm just gonna hope this can't blow the stack. 
             drop(node); 
+        } 
+    } 
+} 
+
+// For debugging. 
+struct TraverseResult<T> { 
+    levels: Vec<Vec<Vec<T>>> 
+} 
+
+impl<T> TraverseResult<T> where T: std::fmt::Debug { 
+    pub fn new() -> Self { 
+        Self { levels: vec![] } 
+    } 
+
+    pub fn insert(&mut self, level: usize, values: Vec<T>) { 
+        if level > self.levels.len() { 
+            return; 
+        } 
+
+        if level == self.levels.len() { 
+            self.levels.push(vec![values]); 
+            return; 
+        } 
+
+        self.levels[level].push(values); 
+    } 
+
+    pub fn print_all(&self) { 
+        for (i, level) in self.levels.iter().enumerate() { 
+            println!("{i}: {:?}", level); 
+        } 
+    } 
+} 
+
+impl<T> BTree<T> where T: PartialOrd + std::fmt::Debug + Clone { 
+    pub fn debug_traverse(&self) { 
+        // Mostly used for debugging. 
+        if self.root.is_null() { 
+            println!("The BTree is empty."); 
+        } 
+
+        let layer: usize = 0; 
+        let mut traverse: TraverseResult<T> = TraverseResult::new(); 
+
+        unsafe { 
+            // for key in &(*self.root).keys { 
+            //     traverse.insert(layer, key.clone()); 
+            // } 
+            traverse.insert(layer, (*self.root).keys.clone()); 
+
+            for child in (*self.root).children.iter() { 
+                (**child)._traverse(&mut traverse, layer); 
+            } 
+        } 
+
+        traverse.print_all(); 
+    } 
+} 
+
+impl<T> BTreeNode<T> where T: PartialOrd + std::fmt::Debug + Clone { 
+    fn _traverse(&self, traverse: &mut TraverseResult<T>, mut layer: usize) { 
+        layer += 1; 
+
+        traverse.insert(layer, self.keys.clone()); 
+
+        if self.leaf { 
+            return; 
+        } 
+
+        for child in self.children.iter() { 
+            unsafe { 
+                (**child)._traverse(traverse, layer); 
+            } 
         } 
     } 
 } 

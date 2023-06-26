@@ -8,13 +8,12 @@ mod b_tree;
 fn main() { 
     // filetype(); 
     let mut btree = b_tree::BTree::new(2); 
-    for x in 0..10 { 
+    for x in 0..4 { 
         btree.insert(x); 
     } 
 
     btree.debug_traverse(); 
-    println!("---"); 
-    btree.remove(0); 
+    btree.remove(3); 
     btree.debug_traverse(); 
 } 
 
