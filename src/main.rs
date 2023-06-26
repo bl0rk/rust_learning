@@ -6,7 +6,16 @@ mod linked_lists; // From a book, not self made. (mod.rs file in linked_lists fo
 mod b_tree; 
 
 fn main() { 
-    filetype(); 
+    // filetype(); 
+    let mut btree = b_tree::BTree::new(2); 
+    for x in 0..10 { 
+        btree.insert(x); 
+    } 
+
+    btree.debug_traverse(); 
+    println!("---"); 
+    btree.remove(0); 
+    btree.debug_traverse(); 
 } 
 
 fn filetype() { 

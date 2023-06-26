@@ -4,16 +4,48 @@ use std::ptr;
 use std::marker::PhantomData; 
 
 // TODO: 
-// - Add deletion. 
 // - Make a BTreeMap version of this. Currently it behaves like a BTreeSet. 
 // - Make design decision: Should the Vectors in the BTreeNodes have their max space pre-allocated to save allocation costs on insertion or not (as is right now) 
 //   to save space. 
-// - Remove hacks for get_ref(). 
+// - Maybe find a way to get rid of code repition in get_ref(). 
+// - Maybe find a better array type then Vector<T> and maybe add field (is it called a field?) n to BTreeNode<T>. 
 
 // Notes: 
 // - get_mut() would be impossible at it's current state i think, since the value could be changed and thus mess up the ordering. Since this particular implementation 
 //   (at the moment) would behave almost identical to a BTreeSet to a outside observer, get_mut() will not be implemented in this data structure. It will be implemented 
 //   in a BTreeMap version of this datastructure and will then only be able to change the values, not the keys. 
+// - Insertion implementation may be weird. If during insertion a node is made full by the insertion operation, this overflow will not be corrected until the next 
+//   insertion that comes across the full node. 
+
+// For debugging. Will be removed later. 
+struct TraverseResult<T> { 
+    levels: Vec<Vec<Vec<T>>> 
+} 
+
+impl<T> TraverseResult<T> where T: std::fmt::Debug { 
+    pub fn new() -> Self { 
+        Self { levels: vec![] } 
+    } 
+
+    pub fn insert(&mut self, level: usize, values: Vec<T>) { 
+        if level > self.levels.len() { 
+            return; 
+        } 
+
+        if level == self.levels.len() { 
+            self.levels.push(vec![values]); 
+            return; 
+        } 
+
+        self.levels[level].push(values); 
+    } 
+
+    pub fn print_all(&self) { 
+        for (i, level) in self.levels.iter().enumerate() { 
+            println!("{i}: {:?}", level); 
+        } 
+    } 
+} 
 
 pub struct BTree<T> { 
     root: *mut BTreeNode<T>, 
@@ -28,7 +60,7 @@ struct BTreeNode<T> {
     leaf: bool 
 } 
 
-impl<T> BTree<T> where T: PartialOrd + std::fmt::Debug { 
+impl<T> BTree<T> where T: PartialOrd + std::fmt::Debug + Clone { 
     /// Creates a new empty BTree. `order` must be greater or equal to 2. 
     /// # Example 
     /// ```
@@ -69,12 +101,29 @@ impl<T> BTree<T> where T: PartialOrd + std::fmt::Debug {
         } 
     } 
 
-    pub fn remove(&mut self, key: T) -> Option<T> { 
+    pub fn remove(&mut self, key: T) { 
         if self.root.is_null() { 
-            return None; 
+            return; 
         } 
 
-        todo!(); 
+        let root = unsafe { &mut (*self.root) }; 
+
+        unsafe { 
+            root.remove(key); 
+        } 
+
+        if root.keys.len() == 0 { 
+            let old_root = self.root; 
+            if root.leaf { 
+                // The tree is empty. 
+                self.root = ptr::null_mut(); 
+            } else { 
+                // Only the root is empty. 
+                self.root = root.children[0]; 
+            } 
+
+            drop(unsafe { Box::from_raw(old_root) }); 
+        } 
     } 
 
     pub fn get_ref(&self, key: T) -> Option<&T> { 
@@ -85,7 +134,17 @@ impl<T> BTree<T> where T: PartialOrd + std::fmt::Debug {
         let mut current_node = unsafe { &(*self.root) }; 
 
         loop { 
-            let mut next = current_node.children.len(); 
+            if current_node.leaf { 
+                for (i, k) in current_node.keys.iter().enumerate() { 
+                    if *k == key { 
+                        return Some(k); 
+                    } 
+                } 
+
+                break;  
+            } 
+
+            let mut next = current_node.children.len()-1; 
 
             for (i, k) in current_node.keys.iter().enumerate() { 
                 if *k == key { 
@@ -93,56 +152,59 @@ impl<T> BTree<T> where T: PartialOrd + std::fmt::Debug {
                 } 
 
                 if *k > key { 
-                    next = i+1; 
+                    next = i; 
+                    break; 
                 } 
             } 
 
-            if current_node.leaf { 
-                break; 
-            } 
-
-            // Note: next-1 as well as next = i+1 are both hacks to get around overflow. 
-            current_node = unsafe { &(*current_node.children[next-1]) } 
+            current_node = unsafe { &(*current_node.children[next]) } 
         } 
 
         None 
     } 
 
-    pub fn traverse(&self) -> String { 
+    pub fn debug_traverse(&self) { 
         // Mostly used for debugging. 
         if self.root.is_null() { 
-            return String::from("The BTree is empty."); 
+            println!("The BTree is empty."); 
         } 
 
-        let layer: u32 = 0; 
-        let mut to_append = String::new(); 
+        let layer: usize = 0; 
+        let mut traverse: TraverseResult<T> = TraverseResult::new(); 
 
         unsafe { 
-            to_append.push_str(&format!("root; keys: {:?}", (*self.root).keys)); 
+            // for key in &(*self.root).keys { 
+            //     traverse.insert(layer, key.clone()); 
+            // } 
+            traverse.insert(layer, (*self.root).keys.clone()); 
 
             for child in (*self.root).children.iter() { 
-                (**child)._traverse(&mut to_append, layer); 
+                (**child)._traverse(&mut traverse, layer); 
             } 
         } 
 
-        return to_append; 
+        traverse.print_all(); 
     } 
 } 
 
-impl<T> BTreeNode<T> where T: PartialOrd + std::fmt::Debug { 
+impl<T> BTreeNode<T> where T: PartialOrd + std::fmt::Debug + Clone { 
     pub fn new(order: usize, leaf: bool) -> Self { 
         Self { 
             order, 
-            keys: Vec::new(), 
+            keys: Vec::new(), // Maybe change keys and children to be at the max size immeaditly? Would save allocation costs but waste memory. 
             children: Vec::new(), 
             leaf 
         } 
     } 
 
-    fn _traverse(&self, to_append: &mut String, mut layer: u32) { 
+    fn _traverse(&self, traverse: &mut TraverseResult<T>, mut layer: usize) { 
         layer += 1; 
 
-        to_append.push_str(&format!("\nkeys {:?}; layer {}", self.keys, layer)); 
+        // for key in &self.keys { 
+        //     traverse.insert(layer, key.clone()); 
+        // } 
+
+        traverse.insert(layer, self.keys.clone()); 
 
         if self.leaf { 
             return; 
@@ -150,7 +212,7 @@ impl<T> BTreeNode<T> where T: PartialOrd + std::fmt::Debug {
 
         for child in self.children.iter() { 
             unsafe { 
-                (**child)._traverse(to_append, layer); 
+                (**child)._traverse(traverse, layer); 
             } 
         } 
     } 
@@ -226,8 +288,133 @@ impl<T> BTreeNode<T> where T: PartialOrd + std::fmt::Debug {
         self.children.insert(index+1, Box::into_raw(Box::new(right_child))); 
     } 
 
-    unsafe fn delete(&mut self, key: T) -> Option<T> { 
-        todo!(); 
+    unsafe fn remove(&mut self, key: T) { 
+        let n = self.keys.len(); 
+        let mut idx: usize = 0; // Index at which points to either the keys index at which the to be removed key sits or to the subtree it should be in. 
+        for k in self.keys.iter() { 
+            if *k == key || *k > key { 
+                break; 
+            } 
+            idx += 1; 
+        } 
+
+        if n != idx && self.keys[idx] == key { 
+            if self.leaf { 
+                // Remove from leaf. The Algorithm should have made sure that deleting out of this node is valid and as such no further action should be required. 
+                self.keys.remove(idx); 
+            } else { 
+                let remove_next = self.remove_from_non_leaf(idx); 
+                (*self.children[remove_next]).remove(key); 
+            } 
+        } else { 
+            if self.leaf { 
+                return; // Key is not in the tree. 
+            } 
+
+            // let flag = idx == n; // Probably not needed. If problems occur try uncommenting this and putting "flag &&" in the last if statement. 
+
+            if (*self.children[idx]).keys.len() < self.order { 
+                self.fill(idx); // Fill it up to `order` elements to allow for deletion. 
+            } 
+
+            if idx > self.keys.len() { 
+                (*self.children[idx-1]).remove(key); 
+            } else { 
+                (*self.children[idx]).remove(key); 
+            } 
+        } 
+    } 
+
+    /// Helper method for deletion. When a key that is supposed to be removed is in an internal node\
+    /// it can't just be removed because of the children nodes. A Key will have to replace the node\
+    /// or the two children must merge. The key to be removed will be moved one node down. 
+    unsafe fn remove_from_non_leaf(&mut self, idx: usize) -> usize { 
+        // Switch the if and else if statements and their contents for a very small possible performance boost. 
+        if (*self.children[idx]).keys.len() >= self.order { 
+            let pred = self.get_pred(idx) as *mut _; // Absolutely a hack, should probably change this to something else. 
+            std::mem::swap(&mut (*pred), &mut self.keys[idx]); 
+
+            return idx; 
+        } else if idx != self.keys.len() && (*self.children[idx+1]).keys.len() >= self.order { 
+            let succ = self.get_succ(idx+1) as *mut _; // Same as above. 
+            std::mem::swap(&mut (*succ), &mut self.keys[idx]); 
+
+            return idx+1; 
+        } else { 
+            if idx == self.keys.len() { 
+                self.merge(idx-1); 
+            } else { 
+                self.merge(idx); 
+            } 
+            return idx; 
+        } 
+    } 
+
+    unsafe fn get_pred(&mut self, idx: usize) -> &mut T { 
+        let mut current_node = &mut (*self.children[idx]); 
+        loop { 
+            if current_node.leaf { 
+                return &mut current_node.keys[self.keys.len()-1]; 
+            } 
+
+            current_node = &mut (*current_node.children[current_node.keys.len()]); 
+        } 
+    } 
+
+    unsafe fn get_succ(&mut self, idx: usize) -> &mut T { 
+        let mut current_node = &mut (*self.children[idx]); 
+        loop { 
+            if current_node.leaf { 
+                return &mut current_node.keys[0]; 
+            } 
+
+            current_node = &mut (*current_node.children[0]); 
+        } 
+    } 
+
+    /// Helper method for deletion. If a node that is part of the subtree which a to be deleted node is in\
+    /// has the minimum amount of elements `order-1` it needs to be filled up with at least one more key\
+    /// to allow for deletion. 
+    unsafe fn fill(&mut self, idx: usize) { 
+        if idx != 0 && (*self.children[idx-1]).keys.len() >= self.order { 
+            // Get key from the left sibling. 
+            let child = &mut (*self.children[idx]); 
+            let sibling = &mut (*self.children[idx-1]); 
+            let sk_len = sibling.keys.len()-1; 
+
+            // Swap the keys from the current node and ths sibling and then remove the wanted key out of the silbing. 
+            std::mem::swap(&mut sibling.keys[sk_len], &mut self.keys[idx]); 
+            child.keys.insert(0, sibling.keys.remove(sk_len)); 
+        } else if idx != self.keys.len() && (*self.children[idx+1]).keys.len() >= self.order { 
+            // Get key from the left sibling. 
+            let child = &mut (*self.children[idx]); 
+            let sibling = &mut (*self.children[idx+1]); 
+
+            // Swap the keys from the current node and ths sibling and then remove the wanted key out of the silbing. 
+            std::mem::swap(&mut sibling.keys[0], &mut self.keys[idx]); 
+            child.keys.push(sibling.keys.remove(0)); 
+        } else { 
+            // Merge with one sibling. 
+            if idx == self.keys.len() { 
+                self.merge(idx-1); 
+            } else { 
+                self.merge(idx); 
+            } 
+        } 
+    } 
+
+    /// Merges the child nodes c\[idx] and c\[idx+1] with the current nodes key k\[idx]. 
+    unsafe fn merge(&mut self, idx: usize) { 
+        let child = &mut (*self.children[idx]); 
+        // sibling will be dropped at the end of the method. 
+        let mut sibling = *Box::from_raw(self.children.remove(idx+1)); 
+
+        child.keys.push(self.keys.remove(idx)); 
+        child.keys.append(&mut sibling.keys); 
+
+        if !child.leaf { 
+            child.children.append(&mut sibling.children); 
+        } 
     } 
 } 
 
@@ -237,8 +424,8 @@ impl<T> Drop for BTree<T> {
             return; 
         } 
 
-        let _root = unsafe { Box::from_raw(self.root) }; 
-        drop(_root); 
+        let root = unsafe { Box::from_raw(self.root) }; 
+        drop(root); 
     } 
 } 
 
